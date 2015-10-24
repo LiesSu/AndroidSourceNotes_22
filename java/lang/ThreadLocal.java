@@ -21,11 +21,13 @@ import java.lang.ref.WeakReference;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Implements a thread-local storage, that is, a variable for which each thread
- * has its own value. All threads share the same {@code ThreadLocal} object,
- * but each sees a different value when accessing it, and changes made by one
- * thread do not affect the other threads. The implementation supports
- * {@code null} values.
+ * TODO : 了解Values类
+ */
+
+/**
+ * 实现线程局部变量存储，使得所修饰的变量在每个线程中都有对应线程的值（支持null）。
+ * 所有线程共享一个ThreadLocal对象，但是每个线程从这个对象中取出的值并不相同，这个
+ * ThreadLocal对象被某个线程改变并不会影响其他线程。
  *
  * @see java.lang.Thread
  * @author Bob Lee
@@ -40,10 +42,8 @@ public class ThreadLocal<T> {
     public ThreadLocal() {}
 
     /**
-     * Returns the value of this variable for the current thread. If an entry
-     * doesn't yet exist for this variable on this thread, this method will
-     * create an entry, populating the value with the result of
-     * {@link #initialValue()}.
+     * 返回当前线程在ThreadLocal对象中对应的实体(T的具体类)。如果不存在实体则为其创建
+     * 一条实体，并且将#initialValue()的返回值填充到实体中。
      *
      * @return the current value of the variable for the calling thread.
      */
@@ -66,8 +66,7 @@ public class ThreadLocal<T> {
     }
 
     /**
-     * Provides the initial value of this variable for the current thread.
-     * The default implementation returns {@code null}.
+     * 为当前线程提供一个局部变量的初始化值。默认的时下返回null。
      *
      * @return the initial value of the variable.
      */
@@ -76,9 +75,7 @@ public class ThreadLocal<T> {
     }
 
     /**
-     * Sets the value of this variable for the current thread. If set to
-     * {@code null}, the value will be set to null and the underlying entry will
-     * still be present.
+     * 为当前线程的局部变量设置值。
      *
      * @param value the new value of the variable for the caller thread.
      */
@@ -92,10 +89,8 @@ public class ThreadLocal<T> {
     }
 
     /**
-     * Removes the entry for this variable in the current thread. If this call
-     * is followed by a {@link #get()} before a {@link #set},
-     * {@code #get()} will call {@link #initialValue()} and create a new
-     * entry with the resulting value.
+     * 为当前线程移除其线程局部变量的实体。如果这个方法调用之后，未调用#set()而直接调
+     * 用#get()，#get()将会调用#initialValue()并将其结果填充入新创建的实体中。
      *
      * @since 1.5
      */
@@ -108,6 +103,7 @@ public class ThreadLocal<T> {
     }
 
     /**
+     * 创建线程局部变量。、
      * Creates Values instance for this thread and variable type.
      */
     Values initializeValues(Thread current) {
