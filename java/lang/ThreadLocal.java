@@ -103,7 +103,7 @@ public class ThreadLocal<T> {
     }
 
     /**
-     * 创建线程局部变量。、
+     * 创建线程局部变量。
      * Creates Values instance for this thread and variable type.
      */
     Values initializeValues(Thread current) {
@@ -135,6 +135,7 @@ public class ThreadLocal<T> {
     private final int hash = hashCounter.getAndAdd(0x61c88647 * 2);
 
     /**
+     * {线程 ， 局部变量值}的映射
      * Per-thread map of ThreadLocal instances to values.
      */
     static class Values {
@@ -145,6 +146,7 @@ public class ThreadLocal<T> {
         private static final int INITIAL_SIZE = 16;
 
         /**
+         * 被删除实体的占位符
          * Placeholder for deleted entries.
          */
         private static final Object TOMBSTONE = new Object();
@@ -155,22 +157,23 @@ public class ThreadLocal<T> {
          */
         private Object[] table;
 
-        /** Used to turn hashes into indices. */
+        /** 把哈希表编程索引  Used to turn hashes into indices. */
         private int mask;
 
-        /** Number of live entries. */
+        /** 仍存活的Value实体数量 Number of live entries. */
         private int size;
 
-        /** Number of tombstones. */
+        /** 成为墓碑的Value实体数量 Number of tombstones. */
         private int tombstones;
 
-        /** Maximum number of live entries and tombstones. */
+        /** 墓碑与存活Value实体的最大数量 Maximum number of live entries and tombstones. */
         private int maximumLoad;
 
-        /** Points to the next cell to clean up. */
+        /** 下一个等待清理的Value实体序号 Points to the next cell to clean up. */
         private int clean;
 
         /**
+         * 构造一个新的空Value实体
          * Constructs a new, empty instance.
          */
         Values() {
@@ -180,6 +183,7 @@ public class ThreadLocal<T> {
         }
 
         /**
+         * 用于可继承的ThreadLocal
          * Used for InheritableThreadLocals.
          */
         Values(Values fromParent) {
@@ -193,6 +197,7 @@ public class ThreadLocal<T> {
         }
 
         /**
+         * 从父类线程继承Values
          * Inherits values from a parent thread.
          */
         @SuppressWarnings({"unchecked"})
@@ -208,6 +213,7 @@ public class ThreadLocal<T> {
                 }
 
                 // The table can only contain null, tombstones and references.
+                //table有且只能含有null、tombstones和引用三种内容
                 Reference<InheritableThreadLocal<?>> reference
                         = (Reference<InheritableThreadLocal<?>>) k;
                 // Raw type enables us to pass in an Object below.
@@ -234,6 +240,7 @@ public class ThreadLocal<T> {
         }
 
         /**
+         * 以capacity*2为长度，创建一个新的空Value实体
          * Creates a new, empty table with the given capacity.
          */
         private void initializeTable(int capacity) {
