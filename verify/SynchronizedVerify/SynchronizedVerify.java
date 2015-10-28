@@ -1,8 +1,7 @@
 package com.synchronize.verify;
 
 public class SynchronizedVerify {
-	
-	
+
 	/**-------------------------------------包裹代码块------------------------------**/
 	Object objA = new Object();
 	Object objB = new Object();
@@ -30,17 +29,20 @@ public class SynchronizedVerify {
 	public void methodNormal(){ track("methodNormal");}
 	public synchronized void methodStyle(){ track("methodStyle");}
 	public synchronized void methodContrast(){ track("methodContrast");}/**相同场景下对比**/
+
+	public static void methodStaticNormal(){ track("methodStaticNormal");}
 	public synchronized static void methodStatic(){ track("methodStatic");}
-	
+	public synchronized static void methodStaticContrast(){ track("methodStaticContrast");}
 	
 	
 	/**循环输出一段内容**/
 	private static void track(String callerName){
-		for(int i = 0;i < 3 ;i++)
+		for(int i = 0;i < 3 ;i++){
 			System.out.println(
 					callerName+":"+i+"\t|"+
 					Thread.currentThread().getName());
 			
 			Thread.yield();
+		}
 	}
 }
