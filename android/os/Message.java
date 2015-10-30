@@ -71,15 +71,15 @@ public final class Message implements Parcelable {
      *
      * 请勿在消息处于使用中时，尝试将其加入队列或者回收。
      */
-    /*package*/ static final int FLAG_IN_USE = 1 << 0;
+    /*package*/ static final int FLAG_IN_USE = 1 << 0;//0001
 
     /** 是否设置消息为异步消息 */
-    /*package*/ static final int FLAG_ASYNCHRONOUS = 1 << 1;
+    /*package*/ static final int FLAG_ASYNCHRONOUS = 1 << 1;//0010
 
-    /** 是否在copyFrom方法中重置flags标记 */
+    /** 是否在copyFrom方法中重置使用标识、同步标识 ，此时值为01(使用中的同步消息)*/
     /*package*/ static final int FLAGS_TO_CLEAR_ON_COPY_FROM = FLAG_IN_USE;
 
-    /** 当前消息是否处在使用中 **/
+    /** 多级标识。最低位0-闲置中，最低位1-使用中；次低位0-同步消息，次低位1-异步消息 **/
     /*package*/ int flags;
     /**消息执行的时间，如果不是延时消息when等于当前时间**/
     /*package*/ long when;
@@ -111,7 +111,7 @@ public final class Message implements Parcelable {
                 Message m = sPool;
                 sPool = m.next;
                 m.next = null;
-                m.flags = 0; //复位flag，将m消息的状态改为未使用
+                m.flags = 0; //复位flag，将m消息的状态改为未使用的同步消息
                 sPoolSize--;
                 return m;
             }
@@ -289,7 +289,7 @@ public final class Message implements Parcelable {
     void recycleUnchecked() {
         // Mark the message as in use while it remains in the recycled object pool.
         // Clear out all other details.
-        flags = FLAG_IN_USE;
+        flags = FLAG_IN_USE;//设置为正在使用中的同步消息
         what = 0;
         arg1 = 0;
         arg2 = 0;
@@ -317,7 +317,16 @@ public final class Message implements Parcelable {
      * 四个字段。
      */
     public void copyFrom(Message o) {
-        this.flags = o.flags & ~FLAGS_TO_CLEAR_ON_COPY_FROM;
+        /**
+         * o.flags    FLAGS_TO_CLEAR_ON_COPY_FROM   this.flags
+         * 00                                       10                                           00
+         * 01                                       10                                           00
+         * 10                                       10                                          10
+         * 11                                       10                                          10
+         *
+         * 操作效果：继承o对象的同/异步标识，无视使用标识直接往this写入闲置标识
+         */
+        this.flags = o.flags & ~FLAGS_TO_CLEAR_ON_COPY_FROM;//o.flags & 10
         this.what = o.what;
         this.arg1 = o.arg1;
         this.arg2 = o.arg2;
@@ -363,16 +372,11 @@ public final class Message implements Parcelable {
     }
     
     /**
-     * 获得一个与当前消息绑定的包含任意数据的Bundle对象，如果这个对象为空则创建它。使用{@link #setData(Bundle)}
+     * 获得一个与当前消息绑定且包含任意数据的Bundle对象，如果这个对象为空则创建它。使用{@link #setData(Bundle)}
      * 可设置这个对象的值。
-     *
-     *
-     * Obtains a Bundle of arbitrary data associated with this
-     * event, lazily creating it if necessary. Set this value by calling
-     * {@link #setData(Bundle)}.  Note that when transferring data across
-     * processes via {@link Messenger}, you will need to set your ClassLoader
-     * on the Bundle via {@link Bundle#setClassLoader(ClassLoader)
-     * Bundle.setClassLoader()} so that it can instantiate your objects when
+     * Note that when transferring data across processes via {@link Messenger}, you will need to set
+     * your ClassLoader on the Bundle via {@link Bundle#setClassLoader(ClassLoader)
+     * Bundle.setClassLoader()} so that it(?) can instantiate your objects when
      * you retrieve them.
      * @see #peekData()
      * @see #setData(Bundle)
@@ -386,9 +390,8 @@ public final class Message implements Parcelable {
     }
 
     /** 
-     * Like getData(), but does not lazily create the Bundle.  A null
-     * is returned if the Bundle does not already exist.  See
-     * {@link #getData} for further information on this.
+     * 与getData()类似，但是在Bundle内容为空是不新建而是返回null。
+     *
      * @see #getData()
      * @see #setData(Bundle)
      */
@@ -397,8 +400,8 @@ public final class Message implements Parcelable {
     }
 
     /**
-     * Sets a Bundle of arbitrary data values. Use arg1 and arg2 members
-     * as a lower cost way to send a few simple integer values, if you can.
+     * 设置Bundle值。在条件允许下，可以使用arg1和arg2作为Bundle的低消耗替代方案。
+     *
      * @see #getData() 
      * @see #peekData()
      */
@@ -407,52 +410,59 @@ public final class Message implements Parcelable {
     }
 
     /**
-     * Sends this Message to the Handler specified by {@link #getTarget}.
-     * Throws a null pointer exception if this field has not been set.
+     * 将消息发送到{@link #getTarget}指定的Handler中处理。如果没有设置这个字段，将会抛出
+     * NullPointException异常
      */
     public void sendToTarget() {
         target.sendMessage(this);
     }
 
     /**
-     * Returns true if the message is asynchronous, meaning that it is not
-     * subject to {@link Looper} synchronization barriers.
+     * 如果消息是异步的则方法返回true，同时说明这个消息不是 {@link Looper}类的同步障碍器的目标。
      *
-     * @return True if the message is asynchronous.
-     *
+     * @return 如果消息是异步的就返回true，否则返回false
      * @see #setAsynchronous(boolean)
      */
     public boolean isAsynchronous() {
+        /**
+         * flags    FLAG_ASYNCHRONOUS    返回值
+         * 00                      10                               false
+         * 01                      10                               false
+         * 10                      10                               true
+         * 11                      10                               true
+         */
         return (flags & FLAG_ASYNCHRONOUS) != 0;
     }
 
     /**
-     * Sets whether the message is asynchronous, meaning that it is not
-     * subject to {@link Looper} synchronization barriers.
+     * 设置消息是否是异步消息。如果是异步消息，便不会受到{@link Looper}类的同步障碍器影响；如果不是，
+     * 当{@link Looper}类设置障碍器之后，在处理过程中消息会被直接跳过直到障碍器移除才会恢复正常。
      * <p>
-     * Certain operations, such as view invalidation, may introduce synchronization
-     * barriers into the {@link Looper}'s message queue to prevent subsequent messages
-     * from being delivered until some condition is met.  In the case of view invalidation,
-     * messages which are posted after a call to {@link android.view.View#invalidate}
-     * are suspended by means of a synchronization barrier until the next frame is
-     * ready to be drawn.  The synchronization barrier ensures that the invalidation
-     * request is completely handled before resuming.
+     * 在某些条件成熟之前，为了使得当前时刻之后的消息暂不被处理 ，某些操作（比如视图失效）可能会向
+     * {@link Looper}类的消息队列引投入同步障碍器。在视图失效的情况下，调用{@link android.view.View#invalidate}
+     * 之后下一个视图准备好绘制之前，发布的同步消息都会因为同步障碍器的存在而在处理时被跳过。同步障
+     * 碍器保证了失效请求在恢复之前能够被完全处理。
      * </p><p>
-     * Asynchronous messages are exempt from synchronization barriers.  They typically
-     * represent interrupts, input events, and other signals that must be handled independently
-     * even while other work has been suspended.
+     * 异步消息不会受到同步障碍器的影响。这些异步消息的代表是中断、输入事件等信号，即使在其他工作被
+     * 暂停时，这些信号也必须立即被处理。
      * </p><p>
-     * Note that asynchronous messages may be delivered out of order with respect to
-     * synchronous messages although they are always delivered in order among themselves.
-     * If the relative order of these messages matters then they probably should not be
-     * asynchronous in the first place.  Use with caution.
+     *  有别于无论何时都按照顺序交付的同步消息，异步消息的交付往往是无序。如果这些信息的相对顺序很
+     *  重要，那么它们不应该是异步的。该方法谨慎使用。
      * </p>
      *
-     * @param async True if the message is asynchronous.
+     * @param async 如果消息为异步则设置为true
      *
      * @see #isAsynchronous()
      */
     public void setAsynchronous(boolean async) {
+        /**
+         * flags    FLAG_ASYNCHRONOUS   async     flags新值
+         *   00                     10                            true          10
+         *   00                     10 (!01)                   false         00
+         *   01                     10                            true          11
+         *   01                     10 (!01)                   false         01
+         *   保留最低位。async为true则次低位为1，否则为0
+         */
         if (async) {
             flags |= FLAG_ASYNCHRONOUS;
         } else {
@@ -461,14 +471,31 @@ public final class Message implements Parcelable {
     }
 
     /*package*/ boolean isInUse() {
+        /**
+         * flags    FLAG_IN_USE     返回值
+         *   00                  01                   false
+         *   01                  01                   true
+         *   10                  01                   false
+         *   11                  01                   true
+         */
         return ((flags & FLAG_IN_USE) == FLAG_IN_USE);
     }
 
     /*package*/ void markInUse() {
+        /**
+         * flags    FLAG_IN_USE     flags新值
+         *   00                  01                   01
+         *   01                  01                   01
+         *   10                  01                   11
+         *   11                  01                   11
+         *
+         *   使得所有情况下，最低位都为1，即都为使用中
+         */
         flags |= FLAG_IN_USE;
     }
 
-    /** Constructor (but the preferred way to get a Message is to call {@link #obtain() Message.obtain()}).
+    /**
+     * 构造方法。推荐使用{@link #obtain() Message.obtain()}获取消息而不是直接调用构造方法创建。
     */
     public Message() {
     }
@@ -518,6 +545,8 @@ public final class Message implements Parcelable {
         return b.toString();
     }
 
+
+    //TODO：了解一下代码，将post统一翻译成发布，deliver统一翻译成交付
     public static final Parcelable.Creator<Message> CREATOR
             = new Parcelable.Creator<Message>() {
         public Message createFromParcel(Parcel source) {
