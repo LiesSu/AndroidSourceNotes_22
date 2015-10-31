@@ -19,6 +19,14 @@ package android.os;
 import android.util.TimeUtils;
 
 /**
+ * 特点：
+ * 1. 使用Parcelable序列化而非Serializable；
+ * 2. 使用多级标识位而非多个boolean；
+ * 3. 低消耗存储的arg1+arg2，高消耗但灵活Bundle，两种方式相辅相成；
+ * 4. 消息池不用LinkedList<Message>，而用静态成员Message sPool；
+ * 5. synchronized关键字，以及静态的虚拟对象锁；
+ * 6. 如果有创建频率高的对象，则设置对象池；
+ *
  *
  * 定义一个包含描述和任意数据的对象，该对象可发送给Handler。它包含两个额外的int变量和一个额外的
  * Object变量，这三个变量允许你在很多场景下不需要再分配。
@@ -66,7 +74,7 @@ public final class Message implements Parcelable {
 
     /**
      * 是否处于使用中。
-     * 这个标识会在消息入队时被设置，并在分发时与回收时保持。只有在新消息被创建或者被获取(obtain)时，
+     * 这个标识会在消息入队时被设置，并在交付（delivery） 时与回收时保持。只有在新消息被创建或者被获取(obtain)时，
      * 标识才会被清除，因为在这个阶段android才允许修改消息的值。
      *
      * 请勿在消息处于使用中时，尝试将其加入队列或者回收。
@@ -266,7 +274,7 @@ public final class Message implements Parcelable {
      * 归还一个消息对象给消息池。
      * <p>
      *  调用该方法后请不要再使用这个消息对象，因为它很快就会被释放（free）。当消息正在消息队列中或者
-     *  正在被分发给Handler时，调用recyle()方法会因为消息正在使用而抛出IllegalStateException异常。
+     *  正在被交付（delivery） 给Handler时，调用recyle()方法会因为消息正在使用而抛出IllegalStateException异常。
      * </p>
      * @throws  IllegalStateException 消息正在使用不能回收
      */
@@ -438,15 +446,15 @@ public final class Message implements Parcelable {
      * 设置消息是否是异步消息。如果是异步消息，便不会受到{@link Looper}类的同步障碍器影响；如果不是，
      * 当{@link Looper}类设置障碍器之后，在处理过程中消息会被直接跳过直到障碍器移除才会恢复正常。
      * <p>
-     * 在某些条件成熟之前，为了使得当前时刻之后的消息暂不被处理 ，某些操作（比如视图失效）可能会向
+     * 在某些条件成熟之前，为了使得当前时刻之后的消息暂不被交付（delivery） ，某些操作（比如视图失效）可能会向
      * {@link Looper}类的消息队列引投入同步障碍器。在视图失效的情况下，调用{@link android.view.View#invalidate}
-     * 之后下一个视图准备好绘制之前，发布的同步消息都会因为同步障碍器的存在而在处理时被跳过。同步障
+     * 之后下一个视图准备好绘制之前，发布（post）的同步消息都会因为同步障碍器的存在而在交付（delivery） 时时被跳过。同步障
      * 碍器保证了失效请求在恢复之前能够被完全处理。
      * </p><p>
      * 异步消息不会受到同步障碍器的影响。这些异步消息的代表是中断、输入事件等信号，即使在其他工作被
      * 暂停时，这些信号也必须立即被处理。
      * </p><p>
-     *  有别于无论何时都按照顺序交付的同步消息，异步消息的交付往往是无序。如果这些信息的相对顺序很
+     *  有别于无论何时都按照顺序交付（delivery） 的同步消息，异步消息的交付（delivery） 往往是无序。如果这些信息的相对顺序很
      *  重要，那么它们不应该是异步的。该方法谨慎使用。
      * </p>
      *
@@ -546,24 +554,28 @@ public final class Message implements Parcelable {
     }
 
 
-    //TODO：了解一下代码，将post统一翻译成发布，deliver统一翻译成交付
+    /**实现Parcelable接口，需要实现一个public statis final 且名叫CREATOR的Parcelable.Creator<T>成员**/
     public static final Parcelable.Creator<Message> CREATOR
             = new Parcelable.Creator<Message>() {
+        /**如何从序列化容器Parcel中读取数据，并创建Message**/
         public Message createFromParcel(Parcel source) {
             Message msg = Message.obtain();
             msg.readFromParcel(source);
             return msg;
         }
-        
+
+        /**反序列化一个Message数组**/
         public Message[] newArray(int size) {
             return new Message[size];
         }
     };
-        
+
+    /**Parcelable接口方法。内容描述，返回0即可。**/
     public int describeContents() {
         return 0;
     }
 
+    /**Parcelable接口方法。如何将Message写入parcel容器中**/
     public void writeToParcel(Parcel dest, int flags) {
         if (callback != null) {
             throw new RuntimeException(
@@ -590,6 +602,8 @@ public final class Message implements Parcelable {
         dest.writeInt(sendingUid);
     }
 
+
+    /**如何从parcel容器中读取数据**/
     private void readFromParcel(Parcel source) {
         what = source.readInt();
         arg1 = source.readInt();

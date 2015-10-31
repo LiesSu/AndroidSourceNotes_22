@@ -216,9 +216,13 @@ public final class Looper {
 
     /**
      *  终止Looper。如想安全终止Looper，请参考lI.quitSafely()
-     * 调用该方法将会使得loop(）在下一次循环时立刻终止，无论终止时MessageQueue中是否还有尚未处
-     * 理的消息。这之后无论以何种方式发布消息都将会失败，譬如Handler#sendMessage(Message)会
-     * 返回false。
+     * <p>调用该方法将会使得loop(）在下一次循环时立刻终止，无论终止时MessageQueue中是否还有尚未处
+     * 理的消息。这之后无论以何种方式发布（post）消息都将会失败，譬如Handler#sendMessage(Message)会
+     * 返回false。</p>
+     * <p>
+     * 调用这个方法时，可能有一些消息在Looper终止前都不会被交付（delivery） ，因而这个方法并不安全。
+     * 考虑使用{@link #quitSafely}方法替代，从而保证所有将要执行的工作能够有条不紊地执行完才结束Looper。
+     * </p>
      */
     public void quit() {
         mQueue.quit(false);
@@ -226,8 +230,8 @@ public final class Looper {
 
     /**
      * 安全地终止Looper。
-     * 调用该方法后，截止调用时刻的所有非延时消息都能够如常被处理，而晚于该时刻的延时消息尽数被丢弃。
-     *  一旦处理完符合时刻的所有消息，loop()便会在下一次循环时终止。这之后无论以何种方式发布消息都将
+     * 调用该方法后，截止调用时刻的所有非延时消息都能够如常被交付（delivery） 被处理，而晚于该时刻的延时消息尽数被丢弃。
+     *  一旦处理完符合时刻的所有消息，loop()便会在下一次循环时终止。这之后无论以何种方式发布（post）消息都将
      *  会失败，譬如Handler#sendMessage(Message)会返回false。
      */
     public void quitSafely() {
