@@ -39,16 +39,21 @@ public final class MessageQueue {
 
     /**消息队列的首部Message**/
     Message mMessages;
+    /**IdleHandler列表**/
     private final ArrayList<IdleHandler> mIdleHandlers = new ArrayList<IdleHandler>();
+    /**保存等待处理的IdleHandler（闲时任务）**/
     private IdleHandler[] mPendingIdleHandlers;
+    /**队列正在退出，等待执行{@link #dispose()}**/
     private boolean mQuitting;
 
     // Indicates whether next() is blocked waiting in pollOnce() with a non-zero timeout.
     /**next()方法是否阻塞，并在非0的超时时间后进入pollOnce()方法**/
     private boolean mBlocked;
 
-    // The next barrier token.
-    // Barriers are indicated by messages with a null target whose arg1 field carries the token.
+    /**
+     * 下一个障碍器的token。
+     *  障碍器的target是null，arg1装有token的消息对象。
+     */
     private int mNextBarrierToken;
 
     private native static long nativeInit();
@@ -58,48 +63,45 @@ public final class MessageQueue {
     private native static boolean nativeIsIdling(long ptr);
 
     /**
-     * Callback interface for discovering when a thread is going to block
-     * waiting for more messages.
+     * 回调接口，当线程准备阻塞以等待更多的消息时调用。
+     * 开发者可以实现自己的IdleHandler类，然后通过{@link #addIdleHandler}方法将其添加到MessageQueue
+     * 中。一旦MessageQueue的循环线程空闲下来，就会执行这些IdleHandler的
+     * {@link IdleHandler#queueIdle IdleHandler.queueIdle()}方法。你可以在这个方法中添加一次操作，
+     * 并根据自己的操作觉得返回true还是false。
      */
     public static interface IdleHandler {
         /**
-         * 当消息队列处理完消息并且不再等待消息时，该方法会被调用。返回true以保持你的空闲
-         * Handler继续处于激活状态，返回false则会将其删除。
+         * 方法在以下两种情况下会被调用：
+         * 1.当消息队列处理完消息开始等待消息时，此时队列为空；
+         * 2.当队列中依然有待处理的消息，但这些消息的交付（delivery）时刻要晚于当前时刻时；
          *
-         * Called when the message queue has run out of messages and will now
-         * wait for more.  Return true to keep your idle handler active, false
-         * to have it removed.  This may be called if there are still messages
-         * pending in the queue, but they are all scheduled to be dispatched
-         * after the current time.
+         *@return  <em>true</em> 队列循环线程在下次执行{@link #next() next()}如果遇到空闲，依然执
+         * 行这个IdleHandler（闲时任务） ； <em>false</em> 这次IdleHandler执行完之后就把这个它删除。
          */
         boolean queueIdle();
     }
 
     /**
-     * Add a new {@link IdleHandler} to this message queue.  This may be
-     * removed automatically for you by returning false from
-     * {@link IdleHandler#queueIdle IdleHandler.queueIdle()} when it is
-     * invoked, or explicitly removing it with {@link #removeIdleHandler}.
+     * 将{@link IdleHandler}添加到队列中。当{@link IdleHandler#queueIdle IdleHandler.queueIdle()}
+     * 方法返回false时，这个IdleHandler会被自动移除；同样主动调用{@link #removeIdleHandler}也可将其移除。
+     * <p>在任何线程调用这个方法都是安全的。
      * 
-     * <p>This method is safe to call from any thread.
-     * 
-     * @param handler The IdleHandler to be added.
+     * @param handler 待添加的IdleHandler对象
      */
     public void addIdleHandler(IdleHandler handler) {
         if (handler == null) {
             throw new NullPointerException("Can't add a null IdleHandler");
         }
-        synchronized (this) {
+        synchronized (this) {//针对mIdleHandlers的增删加锁
             mIdleHandlers.add(handler);
         }
     }
 
     /**
-     * Remove an {@link IdleHandler} from the queue that was previously added
-     * with {@link #addIdleHandler}.  If the given object is not currently
-     * in the idle list, nothing is done.
+     * 从队列中删除一个使用{@link #addIdleHandler}添加进队列的{@link IdleHandler}对象。如果handler
+     * 在队列中不存在，则不做任何处理。
      * 
-     * @param handler The IdleHandler to be removed.
+     * @param handler 需要删除的IdleHandler对象
      */
     public void removeIdleHandler(IdleHandler handler) {
         synchronized (this) {
@@ -107,12 +109,13 @@ public final class MessageQueue {
         }
     }
 
+    //构造函数
     MessageQueue(boolean quitAllowed) {
         mQuitAllowed = quitAllowed;
         mPtr = nativeInit();
     }
 
-    @Override
+    @Override //慎用finalize()
     protected void finalize() throws Throwable {
         try {
             dispose();
@@ -123,6 +126,9 @@ public final class MessageQueue {
 
     // Disposes of the underlying message queue.
     // Must only be called on the looper thread or the finalizer.
+    /**
+     * 废弃当前消息队列。仅允许在当前消息队列所绑定的looper线程中或者finalizer调用。
+     */
     private void dispose() {
         if (mPtr != 0) {
             nativeDestroy(mPtr);
@@ -140,9 +146,10 @@ public final class MessageQueue {
         //quit()、disposed()会将mPtr置为0。
         if (ptr == 0) {
             //应用尝试重启已经退出或者废弃的Looper，则返回null
-            return null;
+            return null;  //出口1，非法执行next()
         }
 
+        /**等待处理的IdleHandler个数**/
         int pendingIdleHandlerCount = -1; // -1 only during first iteration
         int nextPollTimeoutMillis = 0;
         for (;;) {
@@ -150,18 +157,15 @@ public final class MessageQueue {
                 Binder.flushPendingCommands();
             }
 
-
             nativePollOnce(ptr, nextPollTimeoutMillis);
-
             synchronized (this) {
                 // Try to retrieve the next message.  Return if found.
-
                 //now等于自系统启动以来到此时此刻，非深度睡眠的时间
                 final long now = SystemClock.uptimeMillis();
                 Message prevMsg = null;
                 Message msg = mMessages;
 
-                //如果当前队首的消息时设置的同步障碍器。只有同步障碍器target可能为null，handler
+                //如果当前队首的消息时设置的同步障碍器。只有同步障碍器target可能为null，因为handler
                 //发布（post）消息时会将自己赋值给target。
                 if (msg != null && msg.target == null) {
                     // 因为同步障碍器的原因而进入该分支。分支找到下一个异步消息之后才会结束。  Stalled by a barrier.  Find the next asynchronous message in the queue.
@@ -186,7 +190,7 @@ public final class MessageQueue {
                         }
                         msg.next = null;
                         if (false) Log.v("MessageQueue", "Returning message: " + msg);
-                        return msg;
+                        return msg;  //出口2，等到下一个待处理的小西斯
                     }
                 } else {
                     //到这里则表示消息队列中消息均被处理完
@@ -196,20 +200,24 @@ public final class MessageQueue {
                 //所有待处理的消息均处理完成， 接下来处理退出相关的事务
                 if (mQuitting) {//TODO：确定触发时机
                     dispose();
-                    return null;
+                    return null; //出口3，当前队列正在退出等待废弃
                 }
 
                 // If first time idle, then get the number of idlers to run.
                 // Idle handles only run if the queue is empty or if the first message
                 // in the queue (possibly a barrier) is due to be handled in the future.
-                if (pendingIdleHandlerCount < 0
-                        && (mMessages == null || now < mMessages.when)) {
+                /**
+                 * 如果消息队列第一次空闲出来，就获取等待运行的IdleHandler个数。
+                 * IdleHandler仅在队列为空 或者 队列第一个消息（可能是障碍器）的执行时刻晚于当前时刻时才执行。
+                 */
+                if (pendingIdleHandlerCount < 0  //pendingIdleHandlerCount初始值为-1
+                        && (mMessages == null || now < mMessages.when)) { //为空或者执行时刻未到
                     pendingIdleHandlerCount = mIdleHandlers.size();
                 }
                 if (pendingIdleHandlerCount <= 0) {
                     // No idle handlers to run.  Loop and wait some more.
                     mBlocked = true;
-                    continue;
+                    continue; //!!!!!
                 }
 
                 if (mPendingIdleHandlers == null) {
@@ -218,11 +226,11 @@ public final class MessageQueue {
                 mPendingIdleHandlers = mIdleHandlers.toArray(mPendingIdleHandlers);
             }//synchronized结束
 
-            // Run the idle handlers.
-            // We only ever reach this code block during the first iteration.
+            // 执行IdleHandler（可理解为：空闲时任务）。
+            // 只在第一次迭代时，才能执行到这段代码段。
             for (int i = 0; i < pendingIdleHandlerCount; i++) {
                 final IdleHandler idler = mPendingIdleHandlers[i];
-                mPendingIdleHandlers[i] = null; // release the reference to the handler
+                mPendingIdleHandlers[i] = null; //待处理任务即将被处理，将其从待处理数组中删去（置空引用）
 
                 boolean keep = false;
                 try {
@@ -238,15 +246,20 @@ public final class MessageQueue {
                 }
             }
 
-            // Reset the idle handler count to 0 so we do not run them again.
+            //将待处理的IdleHandler个数设置为0，使得本次next()的调用再也不会到达这个for循环。
+            // （结束在语句if (pendingIdleHandlerCount <= 0)）
             pendingIdleHandlerCount = 0;
 
-            // While calling an idle handler, a new message could have been delivered
-            // so go back and look again for a pending message without waiting.
+            // 在处理IdleHandler时，新的消息可能被发布(post)或者延时消息的交付(delivery)时间已到。
+            // 所以在这里，我们不让线程等待而是重新扫描队列中的消息。
             nextPollTimeoutMillis = 0;
-        }
+        }//for(;;)结束
     }
 
+    /**
+     * 退出消息循环 。只允许同一个包的类访问，比如Looper
+     * @param safe  是否安全退出。
+     */
     void quit(boolean safe) {
         if (!mQuitAllowed) {
             throw new IllegalStateException("Main thread not allowed to quit.");
@@ -386,6 +399,13 @@ public final class MessageQueue {
         return true;
     }
 
+    /**
+     * 判断消息队列中是否含有符合指定要求的消息
+     * @param h 消息的目标Handler；
+     * @param what 消息的标识；
+     * @param object 消息所携带的一个任意object数据；
+     * @return  是否含有符合要求的消息。
+     */
     boolean hasMessages(Handler h, int what, Object object) {
         if (h == null) {
             return false;
@@ -403,6 +423,13 @@ public final class MessageQueue {
         }
     }
 
+    /**
+     * 判断消息队列中是否含有符合指定要求的消息
+     * @param h 消息的目标Handler；
+     * @param r  消息的Runnable对象；
+     * @param object  消息所携带的一个任意object数据；
+     * @return 是否含有符合要求的消息。
+     */
     boolean hasMessages(Handler h, Runnable r, Object object) {
         if (h == null) {
             return false;
@@ -427,10 +454,11 @@ public final class MessageQueue {
     }
 
     private boolean isIdlingLocked() {
-        // If the loop is quitting then it must not be idling.
+        //如果循环正在推退出，那么必定不空闲。
         // We can assume mPtr != 0 when mQuitting is false.
         return !mQuitting && nativeIsIdling(mPtr);
      }
+
 
     void removeMessages(Handler h, int what, Object object) {
         if (h == null) {
