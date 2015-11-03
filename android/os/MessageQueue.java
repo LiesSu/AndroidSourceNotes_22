@@ -137,7 +137,7 @@ public final class MessageQueue {
     }
 
     /**
-     *
+     *得到下一个等待处理的消息。如果当前消息队列为空或者下一个消息延时时间未到则阻塞线程。
      *
      * @return  <em>null</em> 消息队列已经退出或者被废弃
      */
@@ -190,15 +190,20 @@ public final class MessageQueue {
                         }
                         msg.next = null;
                         if (false) Log.v("MessageQueue", "Returning message: " + msg);
-                        return msg;  //出口2，等到下一个待处理的小西斯
+                        return msg;  //出口2，取出下一个待处理的消息
                     }
                 } else {
                     //到这里则表示消息队列中消息均被处理完
-                    nextPollTimeoutMillis = -1;
+                    nextPollTimeoutMillis = -1;   //-1表示无限等待
                 }
 
-                //所有待处理的消息均处理完成， 接下来处理退出相关的事务
-                if (mQuitting) {//TODO：确定触发时机
+                //所有待处理的消息均处理完成， 接下来处理闲时任务
+
+                /*
+                *当进入next()时，mQuitting必定为false。但这个false可能在进入synchronized代码块之前修改，
+                * 也可能在随后的某次迭代中被修改
+                 */
+                if (mQuitting) {
                     dispose();
                     return null; //出口3，当前队列正在退出等待废弃
                 }
@@ -214,6 +219,8 @@ public final class MessageQueue {
                         && (mMessages == null || now < mMessages.when)) { //为空或者执行时刻未到
                     pendingIdleHandlerCount = mIdleHandlers.size();
                 }
+
+                //上一次迭代到出口3之下时，已在迭代的最后设置pendingIdleHandlerCount=0
                 if (pendingIdleHandlerCount <= 0) {
                     // No idle handlers to run.  Loop and wait some more.
                     mBlocked = true;
@@ -282,11 +289,17 @@ public final class MessageQueue {
         }
     }
 
+    /**
+     * 将同步障碍器加入消息队列。如果此时消息队列处于阻塞状态也不需要唤醒，因为障碍器本身的目的就是
+     * 阻碍消息队列的循环处理。、
+     * @param when 同步障碍器从何时起效（这个时间是自系统启动开始算起，到指定时间的不包含深度睡
+     *             眠的毫秒数）。
+     * @return  新增的同步障碍器token，用于{@link #removeSyncBarrier(int) }移除障碍器时使用
+     * */
     int enqueueSyncBarrier(long when) {
-        // Enqueue a new sync barrier token.
-        // We don't need to wake the queue because the purpose of a barrier is to stall it.
         synchronized (this) {
             final int token = mNextBarrierToken++;
+            //从消息池取出一个消息，并将其设置为同步障碍器（target为null，且arg1保存token的消息）
             final Message msg = Message.obtain();
             msg.markInUse();
             msg.when = when;
@@ -313,12 +326,15 @@ public final class MessageQueue {
         }
     }
 
+    /**
+     * 移除一个同步障碍器。如果移除之后消息队列不再被同步障碍器拖延则唤醒它。
+     * @param token 需要移除的障碍器token，由{@link #enqueueSyncBarrier(long)}返回而得
+     */
     void removeSyncBarrier(int token) {
-        // Remove a sync barrier token from the queue.
-        // If the queue is no longer stalled by a barrier then wake it.
         synchronized (this) {
             Message prev = null;
             Message p = mMessages;
+            //找到指定的障碍器
             while (p != null && (p.target != null || p.arg1 != token)) {
                 prev = p;
                 p = p.next;
@@ -328,11 +344,14 @@ public final class MessageQueue {
                         + " barrier token has not been posted or has already been removed.");
             }
             final boolean needWake;
+            //如果找到障碍器时，它有前驱消息。说明这个障碍器还没发挥作用，此时无论消息队列循环是否阻塞
+            //都不需要改变其（消息队列）状态。
             if (prev != null) {
                 prev.next = p.next;
                 needWake = false;
-            } else {
+            } else {//如果障碍器时队首第一个消息
                 mMessages = p.next;
+                //消息队列为空或者队首消息不是障碍器时，则唤醒消息队列循环
                 needWake = mMessages == null || mMessages.target != null;
             }
             p.recycleUnchecked();
@@ -345,8 +364,13 @@ public final class MessageQueue {
         }
     }
 
+    /**
+     * 往消息队列中添加一个消息。
+     * @return 是否消息成功加入消息队列
+     * @exception  IllegalStateException 状态异常（msg.target为null 或者 msg处于使用状态）
+     */
     boolean enqueueMessage(Message msg, long when) {
-        if (msg.target == null) {
+        if (msg.target == null) { //如果target为null，一则会被当成障碍器，二则交付时没有交付方
             throw new IllegalArgumentException("Message must have a target.");
         }
         if (msg.isInUse()) {
@@ -366,16 +390,18 @@ public final class MessageQueue {
             msg.when = when;
             Message p = mMessages;
             boolean needWake;
+            //如果队列首部为null，或者入队消息需要马上执行，或者入队消息执行时间早于队首消息
             if (p == null || when == 0 || when < p.when) {
                 // New head, wake up the event queue if blocked.
                 msg.next = p;
                 mMessages = msg;
-                needWake = mBlocked;
+                needWake = mBlocked;//注意这两个状态变量意思完全相反。
             } else {
-                // Inserted within the middle of the queue.  Usually we don't have to wake
-                // up the event queue unless there is a barrier at the head of the queue
-                // and the message is the earliest asynchronous message in the queue.
+                /*在队列中间插入一个消息。一般情况下不需要唤醒队列（不是加到队首为什么要唤醒呢？），除
+                 * 非队首是一个同步障碍器而且新插入的消息是 1)异步消息 2)执行时间是队列中最早 时。*/
+
                 needWake = mBlocked && p.target == null && msg.isAsynchronous();
+                //寻找位置
                 Message prev;
                 for (;;) {
                     prev = p;
@@ -383,10 +409,13 @@ public final class MessageQueue {
                     if (p == null || when < p.when) {
                         break;
                     }
+                    //整个迭代只进入一回
                     if (needWake && p.isAsynchronous()) {
                         needWake = false;
                     }
                 }
+
+                //插入新消息
                 msg.next = p; // invariant: p == prev.next
                 prev.next = msg;
             }
@@ -447,6 +476,7 @@ public final class MessageQueue {
         }
     }
 
+    /**消息循环队列是否空闲**/
     boolean isIdling() {
         synchronized (this) {
             return isIdlingLocked();
@@ -454,12 +484,15 @@ public final class MessageQueue {
     }
 
     private boolean isIdlingLocked() {
-        //如果循环正在推退出，那么必定不空闲。
+        //如果循环正在退出，那么必定不空闲。
         // We can assume mPtr != 0 when mQuitting is false.
         return !mQuitting && nativeIsIdling(mPtr);
      }
 
-
+    /**
+     *  删除target字段为Handler对象h、what字段等于what、object字段为空<em> 或者 </em>等于Object
+     *  对象的所有消息。
+     */
     void removeMessages(Handler h, int what, Object object) {
         if (h == null) {
             return;
@@ -468,7 +501,7 @@ public final class MessageQueue {
         synchronized (this) {
             Message p = mMessages;
 
-            // Remove all messages at front.
+            // 删除队首开始的所有符合参数要求的消息，直到遇到第一个不符合参数要求的
             while (p != null && p.target == h && p.what == what
                    && (object == null || p.obj == object)) {
                 Message n = p.next;
@@ -477,15 +510,15 @@ public final class MessageQueue {
                 p = n;
             }
 
-            // Remove all messages after front.
-            while (p != null) {
+            // 删除剩余队列中所有符合参数要求的消息
+            while (p != null) {//p在上一个while已经证明不符合参数要求
                 Message n = p.next;
                 if (n != null) {
                     if (n.target == h && n.what == what
                         && (object == null || n.obj == object)) {
                         Message nn = n.next;
                         n.recycleUnchecked();
-                        p.next = nn;
+                        p.next = nn; //把n.next复制给p.next
                         continue;
                     }
                 }
@@ -494,6 +527,10 @@ public final class MessageQueue {
         }
     }
 
+    /**
+     *  删除target字段为Handler对象h、callback字段等于r、object字段为空<em> 或者 </em>等于Object
+     *  对象的所有消息。
+     */
     void removeMessages(Handler h, Runnable r, Object object) {
         if (h == null || r == null) {
             return;
@@ -502,16 +539,16 @@ public final class MessageQueue {
         synchronized (this) {
             Message p = mMessages;
 
-            // Remove all messages at front.
+            // 删除队首开始的所有符合参数要求的消息，直到遇到第一个不符合参数要求的
             while (p != null && p.target == h && p.callback == r
-                   && (object == null || p.obj == object)) {
+                   && (object == null || p.obj == object)) {//p在上一个while已经证明不符合参数要求
                 Message n = p.next;
                 mMessages = n;
                 p.recycleUnchecked();
                 p = n;
             }
 
-            // Remove all messages after front.
+            // 删除剩余队列中所有符合参数要求的消息
             while (p != null) {
                 Message n = p.next;
                 if (n != null) {
@@ -519,7 +556,7 @@ public final class MessageQueue {
                         && (object == null || n.obj == object)) {
                         Message nn = n.next;
                         n.recycleUnchecked();
-                        p.next = nn;
+                        p.next = nn;//把n.next复制给p.next
                         continue;
                     }
                 }
@@ -528,6 +565,9 @@ public final class MessageQueue {
         }
     }
 
+    /**
+     * 删除target字段为Handler对象h、object字段为空<em> 或者 </em>等于Object对象的所有消息。
+     */
     void removeCallbacksAndMessages(Handler h, Object object) {
         if (h == null) {
             return;
@@ -561,6 +601,7 @@ public final class MessageQueue {
         }
     }
 
+    /** 删除队列中所有消息 **/
     private void removeAllMessagesLocked() {
         Message p = mMessages;
         while (p != null) {
@@ -571,11 +612,12 @@ public final class MessageQueue {
         mMessages = null;
     }
 
+    /**删除队列中，所有执行时间晚于当前时间的消息**/
     private void removeAllFutureMessagesLocked() {
         final long now = SystemClock.uptimeMillis();
         Message p = mMessages;
         if (p != null) {
-            if (p.when > now) {
+            if (p.when > now) { //队首的执行时间就大于当前时间
                 removeAllMessagesLocked();
             } else {
                 Message n;

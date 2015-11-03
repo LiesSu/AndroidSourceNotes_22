@@ -290,9 +290,9 @@ public final class Message implements Parcelable {
     }
 
     /**
-     * 回收一个可能还在使用中的消息对象。将消息对象的flags字段设置为FLAG_IN_USE并清空其他字段，（为
-     * 何设置flags而不是清空？TODO:）。
-     * <em>该方法只有同一个包中的类可调用。</em>仅在MessageQueue和Looper类需要处理消息队列时调用。
+     * 回收一个可能还在使用中的消息对象。将消息对象的flags字段设置为FLAG_IN_USE并清空其他字段。
+     * （TODO:为何设置flags而不是清空？）
+     * 该方法只有同一个包中的类可调用。仅在MessageQueue和Looper类需要处理消息队列时调用。
      */
     void recycleUnchecked() {
         // Mark the message as in use while it remains in the recycled object pool.
@@ -489,6 +489,9 @@ public final class Message implements Parcelable {
         return ((flags & FLAG_IN_USE) == FLAG_IN_USE);
     }
 
+    /**
+     * 当消息加入消息队列时，调用该方法将消息状态设置为使用中。
+     */
     /*package*/ void markInUse() {
         /**
          * flags    FLAG_IN_USE     flags新值
