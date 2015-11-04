@@ -20,73 +20,57 @@ import android.util.Log;
 import android.util.Printer;
 
 /**
- * TODO :
- * 1.了解Binder.clearCallingIdentity();
- * 2.了解Logging,Printer
- * 3.消息队列的消息如何装填
- * 4.如何保证Looper不会被GC回收  --  因为ThreadLocal?
- * 5.主线程如何在不阻塞的情况下实现消息循环处理
- **/
-
-/**
- *  Looper使用流程：Looper.prepare() -> Looper.loop() -> lI.quit() or lI.quitSafely()。
- *  对外主要API：Looper.prepare()、Looper.loop()、Looper.myQueue() 、lI.isCurrentThread()、
- *  lI.quit() 、lI.quitSafely()、lI.postSyncBarrier() 、 lI.removeSyncBarrier()
- *
- *  Looper实际上是线程的一个附加可选特性。非主线程默认情况下是不与任何Looper关联的，开发者可以
- *  使用Looper.prepare()为当前线程创建一个Looper,并使用Looper.loop()执行消息循环处理。loop()只
- *  有一个出口 : 有且仅当MessageQueue内部调用dispose()或者在非执行loop()的线程中调用该线程相应
- *  Looper的lI.quit()/lI.quitSafely()时，loop()才返回。所以，请谨记loop()之后的代码实际上在消息循环结
- *  束后才会被执行。
- *
- * <pre>
- *  class LooperThread extends Thread {
- *      public Handler mHandler;
- *      public void run() {
- *          Looper.prepare();
- *          //注意构造方法参数
- *          mHandler = new Handler(Looper.myLooper()) {
- *              public void handleMessage(Message msg) {
- *                  // 函数会在loop()中被调用，根据消息内容作出相应处理。因为开启loop()之后线程会被阻塞，
- *                  //所以这之后无论是handler.sendXXXX()系方法还是其他方法，都无法在该线程中调用。
- *                  //然而，
- *                  //使用Handler发出Message这个流程中，android默认情况下是将Message添加到当前(!)线程
- *                  //对应的Looper中的MessageQueue中。所以，在构造Handler时需要将即将执行Looper.loop()
- *                  //的线程对应的Looper对象传入其中。谨记。
- *              }
- *          };
- *          Looper.loop();
- *          //消息循环结束后，想要执行的代码段
- *      }
- *  }
- *  </pre>
- */
+  * Class used to run a message loop for a thread.  Threads by default do
+  * not have a message loop associated with them; to create one, call
+  * {@link #prepare} in the thread that is to run the loop, and then
+  * {@link #loop} to have it process messages until the loop is stopped.
+  * 
+  * <p>Most interaction with a message loop is through the
+  * {@link Handler} class.
+  * 
+  * <p>This is a typical example of the implementation of a Looper thread,
+  * using the separation of {@link #prepare} and {@link #loop} to create an
+  * initial Handler to communicate with the Looper.
+  *
+  * <pre>
+  *  class LooperThread extends Thread {
+  *      public Handler mHandler;
+  *
+  *      public void run() {
+  *          Looper.prepare();
+  *
+  *          mHandler = new Handler() {
+  *              public void handleMessage(Message msg) {
+  *                  // process incoming messages here
+  *              }
+  *          };
+  *
+  *          Looper.loop();
+  *      }
+  *  }</pre>
+  */
 public final class Looper {
     private static final String TAG = "Looper";
 
     // sThreadLocal.get() will return null unless you've called prepare().
-    /**
-     * 线程局部变量（ThreadLocal）使得Looper与线程能够一一对应。
-     * 使用static修饰是因为prepare()/loop()均为静态方法
-     * 使用final修饰则是因为对应关系在建立之后便需要保持不变。
-     */
     static final ThreadLocal<Looper> sThreadLocal = new ThreadLocal<Looper>();
-    /**在prepareMainLooper中记录下主线程的Looper,使getMainLooper能在任意线程中获得主线程的Looper**/
     private static Looper sMainLooper;  // guarded by Looper.class
 
-    /**记录Looper对象的消息队列，创建后不可更改**/
     final MessageQueue mQueue;
-    /**记录创建该Looper对象的线程，用于getThread()等从sThreadLocal取出线程后核对**/
     final Thread mThread;
 
     private Printer mLogging;
 
-    /** 为当前线程创建对应的Looper,应在loop()之前调用。此方法创建的Looper都是可以终止的。**/
+     /** Initialize the current thread as a looper.
+      * This gives you a chance to create handlers that then reference
+      * this looper, before actually starting the loop. Be sure to call
+      * {@link #loop()} after calling this method, and end it by calling
+      * {@link #quit()}.
+      */
     public static void prepare() {
         prepare(true);
     }
 
-    /**每个线程最多只能与一个Looper对应。**/
     private static void prepare(boolean quitAllowed) {
         if (sThreadLocal.get() != null) {
             throw new RuntimeException("Only one Looper may be created per thread");
@@ -95,9 +79,10 @@ public final class Looper {
     }
 
     /**
-     * 为当前线程创建对应的Looper,使用该方法创建的Looper作为整个应用的主Looper，主Looper不允许终止。
-     * 主Looper应由android在UI线程中创建，开发者请勿使用该方法。想要为非主线程创建Looper,请使用
-     * Looper.prepare()
+     * Initialize the current thread as a looper, marking it as an
+     * application's main looper. The main looper for your application
+     * is created by the Android environment, so you should never need
+     * to call this function yourself.  See also: {@link #prepare()}
      */
     public static void prepareMainLooper() {
         prepare(false);
@@ -118,10 +103,8 @@ public final class Looper {
     }
 
     /**
-     * 在当前线程中执行消息循环。确保在当前线程中保存有对应的Looper对象lI，并在调用looper()之后于其
-     * 他线程中通过lI.quit()/lI.quitSafely()终止loop()的死循环。
-     *
-     * (!!!)当MessageQueue中消息被处理完时，loop并不会终止。（该方法尚有不明，待更新
+     * Run the message queue in this thread. Be sure to call
+     * {@link #quit()} to end the loop.
      */
     public static void loop() {
         final Looper me = myLooper();
@@ -135,7 +118,7 @@ public final class Looper {
         Binder.clearCallingIdentity();
         final long ident = Binder.clearCallingIdentity();
 
-        for (; ; ) {
+        for (;;) {
             Message msg = queue.next(); // might block
             if (msg == null) {
                 // No message indicates that the message queue is quitting.
@@ -149,7 +132,6 @@ public final class Looper {
                         msg.callback + ": " + msg.what);
             }
 
-            //调用target的handleMessage()或者执行msg绑定的Runnable
             msg.target.dispatchMessage(msg);
 
             if (logging != null) {
@@ -181,17 +163,17 @@ public final class Looper {
 
     /**
      * Control logging of messages as they are processed by this Looper.  If
-     * enabled, a log message will be written to <var>printer</var>
+     * enabled, a log message will be written to <var>printer</var> 
      * at the beginning and ending of each message dispatch, identifying the
      * target Handler and message contents.
-     *
+     * 
      * @param printer A Printer object that will receive log messages, or
      * null to disable message logging.
      */
     public void setMessageLogging(Printer printer) {
         mLogging = printer;
     }
-
+    
     /**
      * Return the {@link MessageQueue} object associated with the current
      * thread.  This must be called from a thread running a Looper, or a
@@ -215,41 +197,63 @@ public final class Looper {
     }
 
     /**
-     *  终止Looper。如想安全终止Looper，请参考lI.quitSafely()
-     * <p>调用该方法将会使得loop(）在下一次循环时立刻终止，无论终止时MessageQueue中是否还有尚未处
-     * 理的消息。这之后无论以何种方式发布（post）消息都将会失败，譬如Handler#sendMessage(Message)会
-     * 返回false。</p>
+     * Quits the looper.
      * <p>
-     * 调用这个方法时，可能有一些消息在Looper终止前都不会被交付（delivery） ，因而这个方法并不安全。
-     * 考虑使用{@link #quitSafely}方法替代，从而保证所有将要执行的工作能够有条不紊地执行完才结束Looper。
+     * Causes the {@link #loop} method to terminate without processing any
+     * more messages in the message queue.
+     * </p><p>
+     * Any attempt to post messages to the queue after the looper is asked to quit will fail.
+     * For example, the {@link Handler#sendMessage(Message)} method will return false.
+     * </p><p class="note">
+     * Using this method may be unsafe because some messages may not be delivered
+     * before the looper terminates.  Consider using {@link #quitSafely} instead to ensure
+     * that all pending work is completed in an orderly manner.
      * </p>
+     *
+     * @see #quitSafely
      */
     public void quit() {
         mQueue.quit(false);
     }
 
     /**
-     * 安全地终止Looper。
-     * 调用该方法后，截止调用时刻的所有非延时消息都能够如常被交付（delivery） 被处理，而晚于该时刻的延时消息尽数被丢弃。
-     *  一旦处理完符合时刻的所有消息，loop()便会在下一次循环时终止。这之后无论以何种方式发布（post）消息都将
-     *  会失败，譬如Handler#sendMessage(Message)会返回false。
+     * Quits the looper safely.
+     * <p>
+     * Causes the {@link #loop} method to terminate as soon as all remaining messages
+     * in the message queue that are already due to be delivered have been handled.
+     * However pending delayed messages with due times in the future will not be
+     * delivered before the loop terminates.
+     * </p><p>
+     * Any attempt to post messages to the queue after the looper is asked to quit will fail.
+     * For example, the {@link Handler#sendMessage(Message)} method will return false.
+     * </p>
      */
     public void quitSafely() {
         mQueue.quit(true);
     }
 
     /**
-     *  在Looper的消息队列设置一个同步障碍器。同步！同步！同步！
-     *  调用该方法后，消息队列处理消息时将跳过所有的同步消息，只执行异步消息（可使用
-     *  Message#isAsynchronous()判断消息是否是异步的）。该方法返回一个token值，将这个token值放
-     *  入Looper#removeSyncBarrier()即可。
+     * Posts a synchronization barrier to the Looper's message queue.
      *
-     *  Tips :
-     *  1.在设置同步障碍器之后，所有新发布(post)的同步消息可入队，但同样不被执行。而新发布(post)的异步
-     *  消息都如常入队、如常执行。
-     *  2.Looper.postSyncBarrier()与Looper#removeSyncBarrier()必须，必须，必须成对出现，否则将会造
-     *  成线程悬挂。
+     * Message processing occurs as usual until the message queue encounters the
+     * synchronization barrier that has been posted.  When the barrier is encountered,
+     * later synchronous messages in the queue are stalled (prevented from being executed)
+     * until the barrier is released by calling {@link #removeSyncBarrier} and specifying
+     * the token that identifies the synchronization barrier.
      *
+     * This method is used to immediately postpone execution of all subsequently posted
+     * synchronous messages until a condition is met that releases the barrier.
+     * Asynchronous messages (see {@link Message#isAsynchronous} are exempt from the barrier
+     * and continue to be processed as usual.
+     *
+     * This call must be always matched by a call to {@link #removeSyncBarrier} with
+     * the same token to ensure that the message queue resumes normal operation.
+     * Otherwise the application will probably hang!
+     *
+     * @return A token that uniquely identifies the barrier.  This token must be
+     * passed to {@link #removeSyncBarrier} to release the barrier.
+     *
+     * @hide
      */
     public int postSyncBarrier() {
         return mQueue.enqueueSyncBarrier(SystemClock.uptimeMillis());
@@ -257,7 +261,14 @@ public final class Looper {
 
 
     /**
-     * 移除Looper的消息队列中token指定的同步障碍器。
+     * Removes a synchronization barrier.
+     *
+     * @param token The synchronization barrier token that was returned by
+     * {@link #postSyncBarrier}.
+     *
+     * @throws IllegalStateException if the barrier was not found.
+     *
+     * @hide
      */
     public void removeSyncBarrier(int token) {
         mQueue.removeSyncBarrier(token);
@@ -276,7 +287,7 @@ public final class Looper {
     }
 
     /**
-     * Return whether this looper's thread is currently idle（闲置的）, waiting for new work
+     * Return whether this looper's thread is currently idle, waiting for new work
      * to do.  This is intrinsically racy, since its state can change before you get
      * the result back.
      * @hide

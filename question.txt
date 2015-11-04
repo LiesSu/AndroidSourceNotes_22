@@ -1,0 +1,3 @@
+1.MessageQueue的mBlocked用途  -》  本地代码
+2.异步消息和同步消息
+3.Looper无线循环却不阻塞的原理
