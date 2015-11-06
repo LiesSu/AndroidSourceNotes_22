@@ -1,0 +1,58 @@
+一、 基础篇 需要掌握的技能如下：
+
+1、熟练掌握基本控件以及容器控件的使用 ；
+常用的基本控件有：Button 、TextView、EditText、ListView等
+常用的容器控件有：FrameLayout、LinearLayout、RelativeLayout等
+
+2、熟练掌握相关监听器的注册和使用：
+常用监听器有： OnClickListener、OnLongClickListener、OnItemClickListener等
+
+3、掌握Log的使用以及分析方法 ；
+4、掌握Activity、Service的生命周期和使用方法 ；
+5、掌握BroadcastReceiver(广播)的接受和使用 ；
+6、掌握Intent以及IntentFilter的使用 ；
+7、基本掌握数据库方面知识，包括SQLiteDatabase以及ContentProvider的使用方法
+
+ 
+
+除此之外，我们必须得掌握adb shell 的使用方法，常用功能有：
+adb pull 、 adb push 、 adb remount 指令等
+由于shell类同于Linux shell ，我们还得掌握基本的Linux指令等，例如cat、cd 等 。
+
+知识获取渠道主要为：
+Android SDK以及网上大牛的博客。
+附： 关于基础知识的介绍，国内的一些书籍质量真是相当差劲，味同嚼蜡。强烈不建议在此阶段买书籍。
+
+这时，您已经小有所成了，能够基本掌握Android开发了。这儿，我推荐一个手把手讲解Android项目的视频：
+zhengping老师讲解的，强烈推荐。
+视频下载地址：http://www.verycd.com/topics/2847310/
+
+祝您一臂之力的当然还有Mars老师的视频了。
+实践出真知。这个阶段，你可以自己编写一些小Demo了，帮助自己在更深层次发展了。
+PS：我通过看了Mars老师视频后，编写了一个简易的音乐播放器Demo， 感觉挺有成就感的。
+
+ 
+
+通过前面的学习，我们可以成功进入第二个阶段了。
+
+ 
+二、 提高篇 需要掌握的技能如下：
+
+1、掌握Canvas类的使用-- 如何绘图
+2、掌握消息通信机制---Handler相关类的使用以及原理
+3、掌握Context类以及实现原理
+4、掌握View树的绘制流程 。 View绘制流程很重要，掌握它就基本上掌握了Android核心之一了。
+	4.1、掌握触摸事件的分发流程--- onInterceptTouchEvent以及onTouchEvent方法流程
+	4.2、掌握相关监听器的调用机制。例如OnClickListener监听时怎么调用的？
+	4.3、能够编写自定义View以及ViewGroup
+
+5、理解Binder机制----Binder机制很重要，Android的进程间通信都是靠它完成的。掌握它，才能够好的完成接下
+来的学习。
+6、基本掌握ActivityManagerService类的使用，主要掌握的知识点包括如下：
+	6.1、startActivity()流程，即启动一个Activity的流程 ;
+	6.2、startService()流程，即启动一个Service的流程 ;
+
+7、基本掌握PackageManagerService类的使用，主要掌握的知识点包括如下：
+	7.1、开机时如何解析所有已安装应用程序的Apk包的信息
+	7.2、Intent以及IntentFilter的匹配规则以及解析过程
+8、基本掌握View添加至窗口的过程---即WindowManagerIml 、WindowManagerService类的用法
