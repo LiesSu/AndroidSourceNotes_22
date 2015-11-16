@@ -22,47 +22,49 @@ import android.util.Printer;
 import java.lang.reflect.Modifier;
 
 /**
- * A Handler allows you to send and process {@link Message} and Runnable
- * objects associated with a thread's {@link MessageQueue}.  Each Handler
- * instance is associated with a single thread and that thread's message
- * queue.  When you create a new Handler, it is bound to the thread /
- * message queue of the thread that is creating it -- from that point on,
- * it will deliver messages and runnables to that message queue and execute
- * them as they come out of the message queue.
- * 
- * <p>There are two main uses for a Handler: (1) to schedule messages and
- * runnables to be executed as some point in the future; and (2) to enqueue
- * an action to be performed on a different thread than your own.
- * 
- * <p>Scheduling messages is accomplished with the
- * {@link #post}, {@link #postAtTime(Runnable, long)},
- * {@link #postDelayed}, {@link #sendEmptyMessage},
- * {@link #sendMessage}, {@link #sendMessageAtTime}, and
- * {@link #sendMessageDelayed} methods.  The <em>post</em> versions allow
- * you to enqueue Runnable objects to be called by the message queue when
- * they are received; the <em>sendMessage</em> versions allow you to enqueue
- * a {@link Message} object containing a bundle of data that will be
- * processed by the Handler's {@link #handleMessage} method (requiring that
- * you implement a subclass of Handler).
- * 
- * <p>When posting or sending to a Handler, you can either
- * allow the item to be processed as soon as the message queue is ready
- * to do so, or specify a delay before it gets processed or absolute time for
- * it to be processed.  The latter two allow you to implement timeouts,
- * ticks, and other timing-based behavior.
- * 
- * <p>When a
- * process is created for your application, its main thread is dedicated to
- * running a message queue that takes care of managing the top-level
- * application objects (activities, broadcast receivers, etc) and any windows
- * they create.  You can create your own threads, and communicate back with
- * the main application thread through a Handler.  This is done by calling
- * the same <em>post</em> or <em>sendMessage</em> methods as before, but from
- * your new thread.  The given Runnable or Message will then be scheduled
- * in the Handler's message queue and processed when appropriate.
+ * Hanlder允许开发者往线程关联的{@link MessageQueue}发送{@link Message}和Runnable对象。每个
+ * Handler对象只和一个线程以及该线程的消息队列绑定。当开发者创建一个Handler对象后，这个Handler
+ * 对象便会立即绑定到<em> 创建它 </em>的线程/消息队列中。Handler对象负责交付（deliver）Message
+ * 和Runnable给绑定的消息队列，同时执行从消息队列中出队的Message和Runnable。
+ *
+ * <p>
+ *     Handler有两种主要用法：
+ *     1)  安排Message和Runnable对象在某一时刻被执行；   ----  Message和Runnable
+ *     2)  入队一个将在其他线程执行的操作(action)。 ---- Runnable
+ * </p>
+ *
+ * <p>
+ * 安排消息通过以下方法完成：{@link #post}, {@link #postAtTime(Runnable, long)},
+ * {@link #postDelayed},{@link #sendEmptyMessage},{@link #sendMessage},
+ * {@link #sendMessageAtTime},{@link #sendMessageDelayed}。
+ * <em> post </em>系列的方法允许将Runnable对象加入Handler绑定的消息队列，这个Runnable对
+ * 象的{@link Runnable#run()}将会在出队（从消息队列）时被调用。<em> send Message</em>系列的
+ * 方法允许将包含Bundle对象的{@link Message}加入Handler绑定的消息队列中，这个Message对象会在
+ * 出队时被Handler对象的{@link #handleMessage(Message)}处理（Handle类默认的handleMessage方
+ * 法是空方法，如果需要处理Message请继承Handler并重写handleMessage方法）。
+ * </p>
+ *
+ *<p>
+ *     当通过post或者send发布Handler时，开发者可以选择：
+ *     1) 将Message或者Runnable定义为实时的，使消息队列在条件允许时立即处理；
+ *     或者
+ *     2)将Message或者Runnable定义为延时的（需指定延时时间或者绝对时间），使消息队列到指定时刻时
+ *     再处理
+ *     第二个选择允许开发实现超时、ticks（？）和其他基于时序的操作。
+ *</p>
+ *
+ * <p>
+ * 当应用进程被创建时，应用的主线程专门用于运行一个特殊的消息队列。这个消息队列用于管理顶级应用对
+ * 象(activities, broadcast receivers等) 和 所有这些对象创建的窗口。开发者可以创建自己的线程，并且通过
+ * Handler与主应用线程进行通信。通信方式同样是使用<em> post </em>系列和<em> sendMessage </em>
+ * 系列方法，区别在于调用线程是开始者自行创建的线程。上述方法给定的Runnable或者Message对象会被
+ * Handler对象的消息队列调度并且在适当的时候处理。
+ * </p>
  */
 public class Handler {
-    /*
+    /**
+     *将这个标识位设置为true，表示程序需要检测Handler的子类中非静态的 匿名子类、局部子类或者成员子类。
+     * 这些类可能造成泄露。
      * Set this flag to true to detect anonymous, local or member classes
      * that extend this Handler class and that are not static. These kind
      * of classes can potentially create leaks.
@@ -71,24 +73,32 @@ public class Handler {
     private static final String TAG = "Handler";
 
     /**
-     * Callback interface you can use when instantiating a Handler to avoid
-     * having to implement your own subclass of Handler.
+     * 回调接口。如果要处理Message对象，通常要定义一个Handler的子类并重写子类的
+     * {@link #handleMessage(Message)}。而使用Callback接口可以避免继承，方法是在构造Handler对象
+     * 时，传入一个Callback实现类对象（例如{@link #Handler(Callback)}）。在Handler处理Message对象
+     * 时，首先会检测是否提供了Callback对象，如果提供了则直接调用Callback对象的
+     * {@link android.os.Handler.Callback#handleMessage(Message)}，没有则调用
+     * {@link #handleMessage(Message)}。
      *
-     * @param msg A {@link android.os.Message Message} object
-     * @return True if no further handling is desired
+     * @param msg {@link android.os.Message Message}对象
+     * @return 返回true，如果不需要更深层次的处理。返回false则会继续调用{@link #handleMessage(Message)}
      */
     public interface Callback {
+        /**
+         * @param msg {@link android.os.Message Message}对象
+         * @return 返回true，如果不需要更深层次的处理。返回false则会继续调用{@link #handleMessage(Message)}
+         */
         public boolean handleMessage(Message msg);
     }
     
     /**
-     * Subclasses must implement this to receive messages.
+     *为了处理消息，子类必须重写这个方法。
      */
     public void handleMessage(Message msg) {
     }
     
     /**
-     * Handle system messages here.
+     * 分发Message
      */
     public void dispatchMessage(Message msg) {
         if (msg.callback != null) {
@@ -104,64 +114,57 @@ public class Handler {
     }
 
     /**
-     * Default constructor associates this handler with the {@link Looper} for the
-     * current thread.
-     *
-     * If this thread does not have a looper, this handler won't be able to receive messages
-     * so an exception is thrown.
+     * 默认构造方法会将Handler和当前线程的{@link Looper}绑定。如果当前线程没有looper，Handler将
+     * 没有能力接收Message。所以此时会抛出一个RuntimeException。
      */
     public Handler() {
         this(null, false);
     }
 
     /**
-     * Constructor associates this handler with the {@link Looper} for the
-     * current thread and takes a callback interface in which you can handle
-     * messages.
+     * 构造方法会将Handler和当前线程的{@link Looper}绑定，并且为Handler设置一个Callback参数以便在
+     * 处理Message时回调Callback参数的{@link android.os.Handler.Callback#handleMessage(Message)}。
+     * 如果当前线程没有looper，Handler将 没有能力接收Message。所以此时会抛出一个RuntimeException。
      *
-     * If this thread does not have a looper, this handler won't be able to receive messages
-     * so an exception is thrown.
-     *
-     * @param callback The callback interface in which to handle messages, or null.
+     * @param callback 用于处理Message的Callback接口实现类对象或者null。
      */
     public Handler(Callback callback) {
         this(callback, false);
     }
 
     /**
-     * Use the provided {@link Looper} instead of the default one.
+     * 用提供的{@link Looper}对象替代当前线程的Looper与Handler绑定。
      *
-     * @param looper The looper, must not be null.
+     * @param looper 与Handler绑定的looper，不能为null。
      */
     public Handler(Looper looper) {
         this(looper, null, false);
     }
 
     /**
-     * Use the provided {@link Looper} instead of the default one and take a callback
-     * interface in which to handle messages.
+     * 用提供的{@link Looper}对象替代当前线程的Looper与Handler绑定 ，并且为Handler设置一个Callback
+     * 参数以便在处理Message时回调Callback参数的{@link android.os.Handler.Callback#handleMessage(Message)}。
      *
-     * @param looper The looper, must not be null.
-     * @param callback The callback interface in which to handle messages, or null.
+     * @param looper 与Handler绑定的looper，不能为null；
+     * @param callback 用于处理Message的Callback接口实现类对象或者null。
      */
     public Handler(Looper looper, Callback callback) {
         this(looper, callback, false);
     }
 
     /**
-     * Use the {@link Looper} for the current thread
-     * and set whether the handler should be asynchronous.
+     * 构造方法会将Handler和当前线程的{@link Looper}绑定，并且根据参数async设定Handler是否需要是
+     * 异步的。
      *
+     * 默认的Handler都是同步的，除非构造方法中特别指明构造的Handler需要是异步的。
      * Handlers are synchronous by default unless this constructor is used to make
      * one that is strictly asynchronous.
      *
-     * Asynchronous messages represent interrupts or events that do not require global ordering
-     * with respect to synchronous messages.  Asynchronous messages are not subject to
-     * the synchronization barriers introduced by {@link MessageQueue#enqueueSyncBarrier(long)}.
+     * 有别于同步消息必须按照顺序处理，异步消息（比如中断消息和事件消息）并不要求处理时是有序的。异
+     * 步消息不会被{@link MessageQueue#enqueueSyncBarrier(long)}设置的同步障碍器干扰。
      *
-     * @param async If true, the handler calls {@link Message#setAsynchronous(boolean)} for
-     * each {@link Message} that is sent to it or {@link Runnable} that is posted to it.
-     *
+     * @param async 如果为true，Handler会调用{@link Message#setAsynchronous(boolean)}将接受到
+     *              的所有{@link Message} 和 {@link Runnable}设置为异步Message。
      * @hide
      */
     public Handler(boolean async) {
@@ -169,24 +172,25 @@ public class Handler {
     }
 
     /**
-     * Use the {@link Looper} for the current thread with the specified callback interface
-     * and set whether the handler should be asynchronous.
+     * 构造方法会将Handler和当前线程的{@link Looper}绑定，为Handler设置一个Callback参数以便在处理
+     * Message时回调Callback参数的{@link android.os.Handler.Callback#handleMessage(Message)}，
+     * 并且根据参数async设定Handler是否需要是异步的。
      *
+     * 默认的Handler都是同步的，除非构造方法中特别指明构造的Handler需要是异步的。
      * Handlers are synchronous by default unless this constructor is used to make
      * one that is strictly asynchronous.
      *
-     * Asynchronous messages represent interrupts or events that do not require global ordering
-     * with respect to synchronous messages.  Asynchronous messages are not subject to
-     * the synchronization barriers introduced by {@link MessageQueue#enqueueSyncBarrier(long)}.
+     * 有别于同步消息必须按照顺序处理，异步消息（比如中断消息和事件消息）并不要求处理时是有序的。异
+     * 步消息不会被{@link MessageQueue#enqueueSyncBarrier(long)}设置的同步障碍器干扰。
      *
-     * @param callback The callback interface in which to handle messages, or null.
-     * @param async If true, the handler calls {@link Message#setAsynchronous(boolean)} for
-     * each {@link Message} that is sent to it or {@link Runnable} that is posted to it.
+     * @param callback 用于处理Message的Callback接口实现类对象或者null；
+     * @param async 如果为true，Handler会调用{@link Message#setAsynchronous(boolean)}将接受到
+     *              的所有{@link Message} 和 {@link Runnable}设置为异步Message。
      *
      * @hide
      */
     public Handler(Callback callback, boolean async) {
-        if (FIND_POTENTIAL_LEAKS) {
+        if (FIND_POTENTIAL_LEAKS) {  //是否检测类性质
             final Class<? extends Handler> klass = getClass();
             if ((klass.isAnonymousClass() || klass.isMemberClass() || klass.isLocalClass()) &&
                     (klass.getModifiers() & Modifier.STATIC) == 0) {
@@ -206,21 +210,21 @@ public class Handler {
     }
 
     /**
-     * Use the provided {@link Looper} instead of the default one and take a callback
-     * interface in which to handle messages.  Also set whether the handler
-     * should be asynchronous.
+     * 用提供的{@link Looper}对象替代当前线程的Looper与Handler绑定 ，为Handler设置一个Callback参数以
+     * 便在处理Message时回调Callback参数的{@link android.os.Handler.Callback#handleMessage(Message)}，
+     * 并且根据参数async设定Handler是否需要是异步的。
      *
+     * 默认的Handler都是同步的，除非构造方法中特别指明构造的Handler需要是异步的。
      * Handlers are synchronous by default unless this constructor is used to make
      * one that is strictly asynchronous.
      *
-     * Asynchronous messages represent interrupts or events that do not require global ordering
-     * with respect to synchronous messages.  Asynchronous messages are not subject to
-     * the synchronization barriers introduced by {@link MessageQueue#enqueueSyncBarrier(long)}.
+     * 有别于同步消息必须按照顺序处理，异步消息（比如中断消息和事件消息）并不要求处理时是有序的。异
+     * 步消息不会被{@link MessageQueue#enqueueSyncBarrier(long)}设置的同步障碍器干扰。
      *
-     * @param looper The looper, must not be null.
-     * @param callback The callback interface in which to handle messages, or null.
-     * @param async If true, the handler calls {@link Message#setAsynchronous(boolean)} for
-     * each {@link Message} that is sent to it or {@link Runnable} that is posted to it.
+     * @param looper 与Handler绑定的looper，不能为null；
+     * @param callback 用于处理Message的Callback接口实现类对象或者null；
+     * @param async 如果为true，Handler会调用{@link Message#setAsynchronous(boolean)}将接受到
+     *              的所有{@link Message} 和 {@link Runnable}设置为异步Message。
      *
      * @hide
      */
@@ -232,12 +236,10 @@ public class Handler {
     }
 
     /**
-     * Returns a string representing the name of the specified message.
-     * The default implementation will either return the class name of the
-     * message callback if any, or the hexadecimal representation of the
-     * message "what" field.
+     * 返回指定Message的名称。如果Message的<em> callback </em>字段不为空，则返回<em> callback </em>
+     * 的类名称；为空，则返回<em> what </em>字段的十六进制字符串。
      *  
-     * @param message The message whose name is being queried 
+     * @param message 待查询名称的Message
      */
     public String getMessageName(Message message) {
         if (message.callback != null) {
@@ -245,6 +247,10 @@ public class Handler {
         }
         return "0x" + Integer.toHexString(message.what);
     }
+
+    /*********************  obtainMessage系列，均将this设置为所获取消息target  *********************/
+    /*********************  obtainMessage系列，均将this设置为所获取消息target  *********************/
+    /*********************  obtainMessage系列，均将this设置为所获取消息target  *********************/
 
     /**
      * Returns a new {@link android.os.Message Message} from the global message pool. More efficient than
@@ -310,6 +316,19 @@ public class Handler {
         return Message.obtain(this, what, arg1, arg2, obj);
     }
 
+
+    /********************************  post系列，用于发布Runnable    *********************************/
+    /********************************  post系列，用于发布Runnable    *********************************/
+    /********************************  post系列，用于发布Runnable    ********************************
+     * 1）作用：把Runnable封装成Message，并加入消息队列中。参数有别，自行区分；
+     * 2）特点：发布（post）的Runnable都会在Handler绑定的线程执行；
+     * 3）返回：<em> true </em> Runnable成功入队消息队列，否则返回false。失败的原因通常是处理
+     * 消息的队列正在退出。
+     * 4）注意
+     *       a.uptimeMillis，是自系统启动开始的非深度睡眠时间到指定时间的毫秒数。并非日常生活中所用时间。
+     *       b.返回true不代表Runnable一定会被执行（比如未到交付时间looper就退出）。
+     */
+
     /**
      * Causes the Runnable r to be added to the message queue.
      * The runnable will be run on the thread to which this handler is 
@@ -317,9 +336,8 @@ public class Handler {
      *  
      * @param r The Runnable that will be executed.
      * 
-     * @return Returns true if the Runnable was successfully placed in to the 
-     *         message queue.  Returns false on failure, usually because the
-     *         looper processing the message queue is exiting.
+     * @return <em> true </em> Runnable成功入队消息队列，否则返回false。失败的原因通常是处理
+     * 消息的队列正在退出。
      */
     public final boolean post(Runnable r)
     {
@@ -399,11 +417,14 @@ public class Handler {
     }
     
     /**
-     * Posts a message to an object that implements Runnable.
-     * Causes the Runnable r to executed on the next iteration through the
-     * message queue. The runnable will be run on the thread to which this
-     * handler is attached.
-     * <b>This method is only for use in very special circumstances -- it
+     * 发布一个Runnable实现类对象，并且让这个Runnable在消息队列的下一次迭代便执行【因为
+     * enqueueMessage(queue, msg, 0)中的0】。
+     * Runnable会在Handler绑定的线程被执行。
+     *
+     * <b>这个方法仅用于非常特殊的情况。 因为它很容易饿死(? starve)消息循环，导致顺序问题或者其他不
+     * 可预见的副作用。</b>
+     * <b>
+     * This method is only for use in very special circumstances -- it
      * can easily starve the message queue, cause ordering problems, or have
      * other unexpected side-effects.</b>
      *  
@@ -419,6 +440,7 @@ public class Handler {
     }
 
     /**
+     * 看不明白……
      * Runs the specified task synchronously.
      * <p>
      * If the current thread is the same as the handler thread, then the runnable
@@ -484,14 +506,26 @@ public class Handler {
     }
 
     /**
-     * Remove any pending posts of Runnable <var>r</var> with Object
-     * <var>token</var> that are in the message queue.  If <var>token</var> is null,
-     * all callbacks will be removed.
+     * 从消息队列中移除所有callback等于参数r 且 object 等于 参数token的待处理消息。<b>如果参数token
+     * 为null，则移除callback等于参数r的待处理消息。</b>
      */
     public final void removeCallbacks(Runnable r, Object token)
     {
         mQueue.removeMessages(this, r, token);
     }
+
+    /******************************* send系列，用于发送Message  ************************************/
+    /******************************* send系列，用于发送Message  ************************************/
+    /******************************* send系列，用于发送Message  ***********************************
+     *1）作用：将Message加入消息队列中，位置根据各自给定的时间来定。
+     *2）特点：发送（send）的Message都会在Handler绑定的线程中，被Handler的handleMessage()处理；
+     *3）返回：<em> true </em> Runnable成功入队消息队列，否则返回false。失败的原因通常是处理
+     * 消息的队列正在退出。
+     *4）注意：
+     *       a.如果构造的消息when相同，则越后进入消息队列的消息排在越后面。
+     *       b.uptimeMillis，是自系统启动开始的非深度睡眠时间到指定时间的毫秒数。并非日常生活中所用时间。
+     *       c.返回true不代表Runnable一定会被执行（比如未到交付时间looper就退出）。
+     */
 
     /**
      * Pushes a message onto the end of the message queue after all pending messages
@@ -604,6 +638,9 @@ public class Handler {
      * Enqueue a message at the front of the message queue, to be processed on
      * the next iteration of the message loop.  You will receive it in
      * {@link #handleMessage}, in the thread attached to this handler.
+     *
+     *<b>这个方法仅用于非常特殊的情况。 因为它很容易饿死(? starve)消息循环，导致顺序问题或者其他不
+     * 可预见的副作用。</b>
      * <b>This method is only for use in very special circumstances -- it
      * can easily starve the message queue, cause ordering problems, or have
      * other unexpected side-effects.</b>
@@ -623,6 +660,9 @@ public class Handler {
         return enqueueMessage(queue, msg, 0);
     }
 
+    /**
+     * 将消息msg加入消息队列queue中，uptimeMillis即为消息的执行时间<em> when </em>。
+     */
     private boolean enqueueMessage(MessageQueue queue, Message msg, long uptimeMillis) {
         msg.target = this;
         if (mAsynchronous) {
@@ -640,18 +680,16 @@ public class Handler {
     }
 
     /**
-     * Remove any pending posts of messages with code 'what' and whose obj is
-     * 'object' that are in the message queue.  If <var>object</var> is null,
-     * all messages will be removed.
+     * 从消息队列中移除所有what字段等于参数what、obj字段等于参数object的待处理消息（Runnable是特
+     * 殊的消息）。<b>如果参数object为null，则移除所有what字段等于参数what的待处理消息</b>
      */
     public final void removeMessages(int what, Object object) {
         mQueue.removeMessages(this, what, object);
     }
 
     /**
-     * Remove any pending posts of callbacks and sent messages whose
-     * <var>obj</var> is <var>token</var>.  If <var>token</var> is null,
-     * all callbacks and messages will be removed.
+     *  从消息队列中移除所有obj字段等于参数object的待处理消息（Runnable是特殊的消息）。<b>如果参
+     *  数object为null，则移除所有待处理消息</b>
      */
     public final void removeCallbacksAndMessages(Object token) {
         mQueue.removeCallbacksAndMessages(this, token);
@@ -668,6 +706,8 @@ public class Handler {
     /**
      * Check if there are any pending posts of messages with code 'what' and
      * whose obj is 'object' in the message queue.
+     *
+     * @param object 消息所携带的一个任意object数据。可为null，表示该参数不起筛选作用；
      */
     public final boolean hasMessages(int what, Object object) {
         return mQueue.hasMessages(this, what, object);
@@ -745,6 +785,8 @@ public class Handler {
     final boolean mAsynchronous;
     IMessenger mMessenger;
 
+
+    //TODO :了解功能
     private static final class BlockingRunnable implements Runnable {
         private final Runnable mTask;
         private boolean mDone;
