@@ -6,9 +6,11 @@
 4.兼容性
 5.handler 网络拉String
 6.断线重连，网络切换
-
-
-
+增量更新
+夜间模式
+viewpager
+密码安全，加密（hash salt https SSO单点登录）
+主题
 
 
 
