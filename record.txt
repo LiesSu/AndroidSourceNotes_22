@@ -23,3 +23,11 @@ httpClient版本之间的区别，中文乱码解决方案
 Service的启动
 广播
 ListView性能优化
+
+2016.03.02
+ListView性能优化：
+a.使用viewHolder减少findViewById使用的次数
+b.使用convertView
+c.加载网络图片时，开启线程加载
+d.适当使用图片的缩略图
+e.缓存网络视图（SoftReference）
